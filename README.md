@@ -1,6 +1,6 @@
 # memcached-tool-ng
 
-An enhanced version of memcached's memcached-tool script
+An enhanced version of memcached's memcached-tool script (Reference: https://github.com/memcached/memcached/blob/master/scripts/memcached-tool)
 
 # What does it do ?
 
