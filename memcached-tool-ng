@@ -32,14 +32,6 @@ my %numToColors = (
 );
 
 
-# Useful functions
-sub hrMem {
-	my ($bytes) = @_;
-	
-	return "$bytes b";
-}
-
-
 # Everything starts here
 my $addr = shift;
 my $mode = shift || "display";
@@ -261,19 +253,26 @@ elsif ( $mode eq "display" ) {
     my $totReqMem = 0;
     my $toEvic = 0;
     my $toPages = 0;
+    my $toStorageOverhead = 0;
+    my $slabsUsed = 0;
+    my $toUsedMemory = 0;
     foreach my $n (1..$max) {
         my $it = $items{$n} || $defaultStats;
-	foreach my $p ( keys %{$defaultStats} ) {
-		$it->{$p} = $defaultStats->{$p} if ! defined $it->{$p};
-	}
-        $totMemory += $it->{total_pages}*$page_size;
+        foreach my $p ( keys %{$defaultStats} ) {
+          $it->{$p} = $defaultStats->{$p} if ! defined $it->{$p};
+        }
+        $totMemory += (($it->{total_pages})*($page_size));
         $totReqMem += $it->{mem_requested};
         $toEvic += $it->{evicted};
         $toPages += $it->{total_pages};
+        $toStorageOverhead += $it->{used_chunks}?($it->{mem_requested}/($it->{used_chunks}*$it->{chunk_size}))*100:0;
+        $slabsUsed += $it->{used_chunks}?1:0;
+        $toUsedMemory += $it->{used_chunks}?($it->{used_chunks}*$it->{chunk_size}):0;
     }
+    $toStorageOverhead=($toStorageOverhead/$slabsUsed);
 
     # Print it
-    print "   #  Item_Size    Max_age    Pages    Count        Used Mem        To Store    Efficiency    Full?    Evicted    Evict_Time    OOM\n";
+    print "   #  Item_Size    Max_age    Pages    Count       Total_Mem      Used_Mem       To_Store       free_Mem  Strg_OvrHd    Efficiency    Full?    Evicted    Evict_Time      OOM\n";
 
     foreach my $n (1..$max) {
         my $it = $items{$n} || $defaultStats;
@@ -285,17 +284,20 @@ elsif ( $mode eq "display" ) {
             "$it->{chunk_size}B" :
             sprintf("%.1fK", $it->{chunk_size} / 1024.0);
         my $full = $it->{used_chunks} == $it->{total_chunks} ? "yes" : " no";
-        my $usedMem = $it->{total_pages}*$page_size;
-        my $effic = ($it->{mem_requested}*100)/$usedMem;
+        my $totalMem = $it->{total_pages}*$page_size;
+        my $usedMem = $it->{used_chunks}?($it->{used_chunks}*$it->{chunk_size}):0;
+        my $effic = ($it->{mem_requested}*100)/$totalMem;
+        my $freeMemory +=  $it->{free_chunks}?($it->{free_chunks}*$it->{chunk_size}):0;
         my $ineffic = (100-$effic);
-        my $totMemPct = ($usedMem * 100) / $totMemory;
+        my $storageOverhead = $it->{used_chunks}?($it->{mem_requested}/($it->{used_chunks}*$it->{chunk_size}))*100:0;
+        my $totMemPct = ($totalMem * 100) / $totMemory;
         my $danger = $totMemPct * $ineffic;
         my $colorIdx = int(($danger * 3) / 10000);
         my $colorCode = $colorCodes{$numToColors{$colorIdx}};
 
-        printf("$colorCode %3d %10s %9ds %7d %9d %14s %14s %10.2f %10s %10d %11d %12d\n",
+        printf("$colorCode %3d %10s %9ds %7d %9d %14s %14s %14s %14s %10.2f %10.2f %10s %10d %11d %12d\n",
                $n, $size, $it->{age}, $it->{total_pages} || 0,
-               $it->{number} || 0, $it->{total_pages}*$page_size, $it->{mem_requested}, $effic, $full, $it->{evicted},
+               $it->{number} || 0, $totalMem, $usedMem, $it->{mem_requested},$freeMemory,$storageOverhead, $effic, $full, $it->{evicted},
                $it->{evicted_time}, $it->{outofmemory});
     }
 
@@ -305,9 +307,10 @@ elsif ( $mode eq "display" ) {
     my $colorIdx = 2-int(($totMemPct * 3) / 100);
     my $color = $colorCodes{($colorIdx ? $numToColors{$colorIdx} : "green")};
     print "\033[0m\n";
-    print "Total used memory: ".hrMem($totMemory)." (for ".hrMem($totReqMem)." of data)\n";
+    print "Total memory: ".$totMemory." (for ".$totReqMem." of data)\n";
+    print "Global efficiency:  $color".($totMemory ? sprintf("%.2f",($totReqMem*100)/$totMemory) : "N/A")." %\033[0m\n";
+    print "Total used memory: ".$toUsedMemory." (for ".$totReqMem." of data)\n";
+    print "Global Storage Overhead: $color".(sprintf("%.2f",$toStorageOverhead))." %\033[0m\n";
     print "Total Evictions: ".($toEvic)." evictions \n";
-    print "Total Pages Used: ".($toPages)." pages \n";
-    print "Global efficiency:  $color".($totMemory ? sprintf("%.2f",($totReqMem*100)/$totMemory) : "N/A")." %\n";
-    print "\033[0m\n\n";
+    print "Total Pages Used: ".($toPages)." pages \n\n";
 }
